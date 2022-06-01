@@ -19,8 +19,6 @@ markup.py
 9. аккуратно. если исчезнет название какой-то метки, которая уже проставлена - она исчезнет у всех оленей
 
 TODO:
-Кажется, точки в CSV смещены на несколько пикселей
-Центрировать картинку в окне
 Лучше обработать отображение подсказки (динамическое расположение, z-order)
 Удаление метки
 Перемещение существующей метки?
@@ -106,52 +104,61 @@ def save_markup(markup):
             writer.writerow(row)
 
 
-class CanvasImage:
-    def __init__(self, canvas, x=0, y=0, anchor='nw'):
+class FittedImage:
+    def __init__(self, canvas):
         self.canvas = canvas
-        self.x = x
-        self.y = y
-        self.anchor = anchor
-
         self.canvas_image_id = None
         self.image_pil = None
         # ImageTk have refcounting bug, so we must keep reference to it
         self.image_tk = None
         self.scale = 1.0
+        self.fitted_size = None
+        self.fitted_pos = (0, 0)
 
     def load(self, filename):
         self.image_pil = Image.open(filename)
-        self.image_tk = ImageTk.PhotoImage(self.image_pil)
+        self.on_canvas_resize()
+
+    def on_canvas_resize(self):
+        if not self.image_pil:
+            return
+        self.scale = min(self.canvas.size[0] / self.image_pil.size[0], self.canvas.size[1] / self.image_pil.size[1])
+        self.fitted_size = (
+            int(round(self.scale * self.image_pil.width)), 
+            int(round(self.scale * self.image_pil.height))
+        )
+        self.fitted_pos = (
+            (self.canvas.size[0] - self.fitted_size[0])//2, 
+            (self.canvas.size[1] - self.fitted_size[1])//2
+        )
+        resized_img = self.image_pil.resize(self.fitted_size)
+        self.image_tk = ImageTk.PhotoImage(resized_img)
         if self.canvas_image_id is None:
             self.canvas_image_id = self.canvas.create_image(
-                self.x, self.y, image=self.image_tk, anchor=self.anchor
+                self.fitted_pos[0], self.fitted_pos[1], image=self.image_tk, anchor='nw'
             )
         else:
             self.canvas.itemconfigure(self.canvas_image_id, image=self.image_tk)
-
-    def rescale(self, scale):
-        print('scale is', scale)
-        self.scale = scale
-        if not self.image_pil:
-            return
-        new_size = (
-            int(round(scale * self.image_pil.width)), 
-            int(round(scale * self.image_pil.height))
-        )
-        resized_img = self.image_pil.resize(new_size)
-        self.image_tk = ImageTk.PhotoImage(resized_img)
-        self.canvas.itemconfigure(self.canvas_image_id, image=self.image_tk)
-
-    def fit(self, window_size):
-        print('fit', window_size)
-        if not self.image_pil:
-            return
-        scale = min(window_size[0] / self.image_pil.size[0], window_size[1] / self.image_pil.size[1])
-        self.rescale(scale)
+            self.canvas.coords(self.canvas_image_id, self.fitted_pos[0], self.fitted_pos[1])
 
     @property
     def size(self):
         return self.image_pil.size if self.image_pil else None
+
+    def bbox(self):
+        return (*self.fitted_pos, *self.fitted_size)
+
+    def to_screen_coords(self, real_image_point):
+        return (
+            int(round(self.fitted_pos[0] + real_image_point[0] * self.scale)),
+            int(round(self.fitted_pos[1] + real_image_point[1] * self.scale))
+        )
+
+    def to_real_coords(self, canvas_point):
+        return (
+            int(round((canvas_point[0] - self.fitted_pos[0]) / self.scale)),
+            int(round((canvas_point[1] - self.fitted_pos[1]) / self.scale)),
+        )
 
 
 class Cursor:
@@ -204,12 +211,13 @@ class App(tk.Tk):
         self.geometry('800x600')
 
         self.canvas = tk.Canvas(self, bg='white')
-        self.canvas.pack(expand=True, fill=tk.BOTH)
+        self.canvas.pack(expand=1, fill=tk.BOTH)
         # no robust method for getting canvas size :(
         # we should use this initialization and then track resize events
-        self.canvas_size = (int(self.canvas['width']), int(self.canvas['height']))
+        # (And we patch canvas object for convenience)
+        self.canvas.size = (int(self.canvas['width']), int(self.canvas['height']))
 
-        self.deer_image = CanvasImage(self.canvas, 0, 0, anchor='nw')
+        self.deer_image = FittedImage(self.canvas)
 
         self.markup = load_markup()
         self.current_index = 0
@@ -267,7 +275,6 @@ class App(tk.Tk):
     def current_item(self):
         return self.markup[self.current_index]
 
-
     def on_move(self, event):
         self.cursor.set_pos(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
 
@@ -283,7 +290,6 @@ class App(tk.Tk):
 
     def load_item(self):
         self.deer_image.load(images_dir / self.current_item['filename'])
-        self.deer_image.fit(self.canvas_size)
         self.canvas.itemconfigure('mark', state='hidden')
         self.update_screen_marks()
         self.current_label_index = 0
@@ -309,35 +315,21 @@ class App(tk.Tk):
     def update_screen_marks(self):
         self.canvas.delete('mark')
         for key, coord in self.current_item['labels'].items():
-            x = coord[0] * self.deer_image.scale + 2    # +2 to compensate some internal offest
-            y = coord[1] * self.deer_image.scale + 2    #
+            x, y = self.deer_image.to_screen_coords(coord)
             self.canvas.create_oval(x-10, y-10, x+10, y+10, outline='red', tags='mark')
             self.canvas.create_text(x+16, y+16, fill='red', font='Arial 13', text=key, tags='mark')
             self.canvas.create_line(x-20, y, x+20, y, fill='red', tags='mark')
             self.canvas.create_line(x, y-20, x, y+20, fill='red', tags='mark')
 
     def set_mark(self, key, screen_coord):
-        self.current_item['labels'][key] = (
-            int(round(screen_coord[0] / self.deer_image.scale)),
-            int(round(screen_coord[1] / self.deer_image.scale))
-        )
+        # -2px to compensate some internal offest
+        screen_coord = (screen_coord[0] + 2, screen_coord[1] + 2) 
+        self.current_item['labels'][key] = self.deer_image.to_real_coords(screen_coord)
         self.update_screen_marks()
 
-    def set_screen_mark(self, key, coord):
-        print(key, coord)
-        x, y = coord
-        tag = f'mark_{key}'
-        if self.canvas.type(tag):
-            self.canvas.itemconfigure(tag, state='normal')
-            self.canvas.moveto(tag, *coord)
-            self.canvas.coords(f'{tag}_text', *coord)
-        else:
-            self.canvas.create_oval(x-10, y-10, x+10, y+10, width=2, outline='red', tags=('mark', tag))
-            self.canvas.create_text(x+20, y, fill='red', text=key, tags=('mark', tag))
-
     def on_canvas_resize(self, event):
-        self.canvas_size = (event.width, event.height)
-        self.deer_image.fit(self.canvas_size)
+        self.canvas.size = (event.width, event.height)
+        self.deer_image.on_canvas_resize()
         self.update_screen_marks()
         self.canvas.moveto('counter', event.width-215, event.height-30)
 
