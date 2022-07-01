@@ -7,6 +7,8 @@
 
 Ссылка на текст статьи: https://docs.google.com/document/d/1mJBBR6Vifs-c_CMo-9DLs1gxXf2EoRlf/edit 
 
+Ссылка на данные разной степени обработки: https://docs.google.com/document/d/1THrl8PfusUq4fwYRrBhKwi7_u9Um5BkAjdac-vcJFmY/edit
+
 markup.py - разметчик ключевых точек на изображениях
 
 image_adjustment - код для первичной обработки изображений
