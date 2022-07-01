@@ -5,7 +5,7 @@
 
 Проект посвящён анализу изображений оленей с целью кластеризации по стилю. В этом репозитории собираются коды, использованные для подготовки и анализа данных.
 
-Ссылка на текст статьи: https://docs.google.com/document/d/1mJBBR6Vifs-c_CMo-9DLs1gxXf2EoRlf/edit 
+Ссылка на текст статьи: https://docs.google.com/document/d/1_vS1hlmprwnuXpy-oE6KseHAr0MnXy83/edit
 
 Ссылка на данные разной степени обработки: https://docs.google.com/document/d/1THrl8PfusUq4fwYRrBhKwi7_u9Um5BkAjdac-vcJFmY/edit
 
